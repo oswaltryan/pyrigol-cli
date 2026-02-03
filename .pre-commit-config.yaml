@@ -33,20 +33,9 @@ repos:
     hooks:
     -   id: mypy
         name: mypy
-        entry: mypy
-        language: python
-        types: [python]
+        entry: uv run mypy .
+        language: system
         pass_filenames: false
-        args: [ "." ]
-        additional_dependencies:
-        -   .
-        -   mypy==1.19.1
-        # Add types-* packages here as needed
-        -   types-requests
-        -   types-PyYAML
-        # Add testing deps so mypy can check tests too
-        -   pytest
-        -   pytest-asyncio
 
     -   id: pytest
         name: pytest

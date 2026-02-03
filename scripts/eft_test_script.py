@@ -1,5 +1,5 @@
 import argparse
-from typing import Any, cast
+from typing import Any
 
 import pyvisa as visa
 import pyvisa.constants as visa_constants
@@ -104,7 +104,7 @@ def discover_resource() -> str | None:
     except Exception as exc:
         print(f"Warning: NI-VISA is not available ({exc}).")
         return None
-    usb_resources = cast(tuple[str, ...], resources.list_resources("USB?*"))
+    usb_resources = resources.list_resources("USB?*")
     if usb_resources:
         return usb_resources[0]
     print("Warning: No USB VISA resources found. Is the device connected?")
