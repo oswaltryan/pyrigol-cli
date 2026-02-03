@@ -1,0 +1,94 @@
+[project]
+name = "pyrigol"
+version = "0.1.0"
+description = "Rigol DP900 series power supply control via PyVISA."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyvisa>=1.12.0",
+    "pyserial",
+]
+
+[project.scripts]
+pyrigol = "pyrigol.app.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest-mock",
+    "ruff",
+    "pre-commit",
+    "types-requests",
+    "types-PyYAML",
+]
+tcpip = [
+    "psutil",
+    "zeroconf",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.10.0",
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.4.2",
+    "pre-commit>=3.7.0",
+    "types-requests",
+    "types-PyYAML",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyrigol"]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+src = ["src"]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# Start from a known baseline; adjust based on your existing config.
+select = [
+  "E", "F",          # pycodestyle + pyflakes
+  "B",              # bugbear
+  "I",              # import sorting
+  "UP",             # pyupgrade
+  "SIM",            # simplify
+  "PLR",            # pylint refactor rules (god-function controls live here)
+]
+
+[tool.ruff.lint.pylint]
+# Tune these to your minimum bar
+max-statements = 30
+max-branches = 10
+max-locals = 12
+max-nested-blocks = 4
+max-args = 6
+max-positional-args = 4
+max-bool-expr = 4
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov=src"
+testpaths = [
+    "tests",
+]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

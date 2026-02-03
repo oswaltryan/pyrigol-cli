@@ -1,0 +1,62 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+default_language_version:
+    python: python3.12
+
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-yaml
+    -   id: check-added-large-files
+
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.14.10
+    hooks:
+    -   id: ruff
+        args: [ --fix ]
+    -   id: ruff-format
+
+# This repository provides the `python_uv` language definition.
+-   repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.9.18
+    hooks:
+    -   id: uv-lock
+
+# Local hooks use `language: python` so pre-commit creates virtual
+# environments and installs the required tooling automatically.
+-   repo: local
+    hooks:
+    -   id: mypy
+        name: mypy
+        entry: mypy
+        language: python
+        types: [python]
+        additional_dependencies:
+        -   mypy==1.10.0
+        # Add types-* packages here as needed
+        -   types-requests
+        -   types-PyYAML
+        # Add testing deps so mypy can check tests too
+        -   pytest
+        -   pytest-asyncio
+
+    -   id: pytest
+        name: pytest
+        entry: pytest
+        language: python
+        types: [python]
+        pass_filenames: false
+        additional_dependencies:
+        # Install the project (and its deps) so imports work in the hook env.
+        -   .
+        # Install project and test dependencies so the hook can run in isolation
+        -   pyvisa>=1.12.0
+        -   pytest==8.2.0
+        -   pytest-asyncio
+        -   pytest-mock
+        -   pytest-cov
