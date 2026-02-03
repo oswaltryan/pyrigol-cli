@@ -14,6 +14,10 @@ from pyrigol.rigol.dp900 import RigolDP900
 
 CH1_MIN = 0.00
 CH1_MAX = 32.00
+CH2_MIN = 0.00
+CH2_MAX = 32.00
+CH3_MIN = 0.00
+CH3_MAX = 6.00
 INVERT_LEFT_CUT = 0
 INVERT_RIGHT_CUT = 0
 INNER_WIDTH = 26
@@ -23,6 +27,8 @@ MIN_BORDER_LEN = 2
 KEY_EXTENDED = b"\xe0"
 KEY_UP = b"H"
 KEY_DOWN = b"P"
+KEY_LEFT = b"K"
+KEY_RIGHT = b"M"
 KEY_TOGGLE = b" "
 KEY_CONFIRM = b"\r"
 KEY_DOT = b"."
@@ -58,11 +64,11 @@ def _format_inner(text: str, width: int) -> str:
 
 def render_channel_box(
     channel_label: str, voltage: float, status: str, is_selected: bool
-) -> str:
+) -> list[str]:
     voltage_text = f"  Voltage: {voltage:>5.2f} V"
     status_text = f"  Status : {status:<3}"
     header_text = f"           {channel_label}            "
-    lines = [
+    return [
         "+--------------------------+",
         _apply_reverse(f"|{_format_inner(header_text, INNER_WIDTH)}|", is_selected),
         _apply_reverse(f"|{_format_inner('', INNER_WIDTH)}|", is_selected),
@@ -71,12 +77,11 @@ def render_channel_box(
         _apply_reverse(f"|{_format_inner('', INNER_WIDTH)}|", is_selected),
         "+--------------------------+",
     ]
-    return "\n".join(lines)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Interactive TUI for Rigol DP900 series (CH1 only)."
+        description="Interactive TUI for Rigol DP900 series (CH1-CH3)."
     )
     parser.add_argument(
         "--resource",
@@ -182,19 +187,29 @@ def build_serial_settings(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def draw_screen(
-    channel_label: str, voltage: float, status: str, is_selected: bool
-) -> None:
+def draw_screen(boxes: list[list[str]]) -> None:
     os.system("cls")
-    print(render_channel_box(channel_label, voltage, status, is_selected))
+    for row in zip(*boxes, strict=True):
+        print("  ".join(row))
     print("")
     print("Use Up/Down arrows to adjust by 0.25 V. Space toggles on/off.")
     print("Type 0-9 and optional '.' to set voltage. Enter confirms.")
+    print("Press Left/Right arrows to select a channel.")
     print("Press Q to quit.")
 
 
 def clamp_voltage(voltage: float, min_v: float, max_v: float) -> float:
     return max(min_v, min(max_v, voltage))
+
+
+def cycle_channel(
+    current: int, channels: dict[int, ChannelState], direction: int
+) -> int:
+    ordered = sorted(channels)
+    if current not in channels:
+        return ordered[0]
+    idx = ordered.index(current)
+    return ordered[(idx + direction) % len(ordered)]
 
 
 @dataclass(frozen=True)
@@ -206,11 +221,17 @@ class ChannelContext:
 
 
 @dataclass
-class UiState:
+class ChannelState:
     voltage: float
     is_on: bool
     status: str
     input_buffer: str
+
+
+@dataclass
+class UiState:
+    selected_channel: int
+    channels: dict[int, ChannelState]
 
 
 def apply_voltage(ctx: ChannelContext, value: float) -> None:
@@ -253,103 +274,139 @@ def try_build_candidate(input_buffer: str, key: bytes) -> str | None:
     return None
 
 
-def handle_backspace(ctx: ChannelContext, state: UiState) -> UiState:
-    if not state.input_buffer:
-        return state
+def handle_backspace(ctx: ChannelContext, channel: ChannelState) -> ChannelState:
+    if not channel.input_buffer:
+        return channel
 
-    updated = state.input_buffer[:-1]
+    updated = channel.input_buffer[:-1]
     if not updated:
-        return UiState(state.voltage, state.is_on, state.status, updated)
+        return ChannelState(channel.voltage, channel.is_on, channel.status, updated)
 
-    buffer_value, voltage, applied = try_apply_candidate(updated, state.voltage, ctx)
+    buffer_value, voltage, applied = try_apply_candidate(updated, channel.voltage, ctx)
     if applied:
-        return UiState(voltage, state.is_on, state.status, buffer_value)
+        return ChannelState(voltage, channel.is_on, channel.status, buffer_value)
 
-    return UiState(state.voltage, state.is_on, state.status, updated)
+    return ChannelState(channel.voltage, channel.is_on, channel.status, updated)
 
 
 def handle_numeric_input(
     key: bytes,
-    state: UiState,
+    channel: ChannelState,
     ctx: ChannelContext,
-) -> tuple[UiState, bool]:
-    candidate = try_build_candidate(state.input_buffer, key)
+) -> tuple[ChannelState, bool]:
+    candidate = try_build_candidate(channel.input_buffer, key)
     if candidate is None:
-        return state, False
+        return channel, False
 
-    buffer_value, voltage, applied = try_apply_candidate(candidate, state.voltage, ctx)
+    buffer_value, voltage, applied = try_apply_candidate(
+        candidate, channel.voltage, ctx
+    )
     if not applied:
-        return state, False
+        return channel, False
 
-    return UiState(voltage, state.is_on, state.status, buffer_value), True
+    return ChannelState(voltage, channel.is_on, channel.status, buffer_value), True
 
 
 def handle_adjustment_key(
     key: bytes,
-    state: UiState,
+    channel: ChannelState,
     ctx: ChannelContext,
-) -> tuple[UiState, bool]:
+) -> tuple[ChannelState, bool]:
     if key == KEY_UP:
-        voltage = clamp_voltage(state.voltage + 0.25, ctx.min_v, ctx.max_v)
+        voltage = clamp_voltage(channel.voltage + 0.25, ctx.min_v, ctx.max_v)
         apply_voltage(ctx, voltage)
-        return UiState(voltage, state.is_on, state.status, ""), True
+        return ChannelState(voltage, channel.is_on, channel.status, ""), True
     if key == KEY_DOWN:
-        voltage = clamp_voltage(state.voltage - 0.25, ctx.min_v, ctx.max_v)
+        voltage = clamp_voltage(channel.voltage - 0.25, ctx.min_v, ctx.max_v)
         apply_voltage(ctx, voltage)
-        return UiState(voltage, state.is_on, state.status, ""), True
-    return state, False
+        return ChannelState(voltage, channel.is_on, channel.status, ""), True
+    return channel, False
 
 
-def handle_toggle(state: UiState, ctx: ChannelContext) -> UiState:
-    is_on = not state.is_on
+def handle_toggle(channel: ChannelState, ctx: ChannelContext) -> ChannelState:
+    is_on = not channel.is_on
     status = "ON" if is_on else "OFF"
     ctx.psu.output_state(ctx.selected_channel, 1 if is_on else 0)
-    return UiState(state.voltage, is_on, status, state.input_buffer)
+    return ChannelState(channel.voltage, is_on, status, channel.input_buffer)
 
 
-def handle_confirm(state: UiState) -> UiState:
-    return UiState(state.voltage, state.is_on, state.status, "")
+def handle_confirm(channel: ChannelState) -> ChannelState:
+    return ChannelState(channel.voltage, channel.is_on, channel.status, "")
 
 
-def handle_extended_key(key: bytes, state: UiState, ctx: ChannelContext) -> UiState:
-    updated, _ = handle_adjustment_key(key, state, ctx)
-    return updated
+def handle_extended_key(
+    key: bytes, channel: ChannelState, ctx: ChannelContext, state: UiState
+) -> tuple[ChannelState, int | None]:
+    if key == KEY_LEFT:
+        return channel, cycle_channel(state.selected_channel, state.channels, -1)
+    if key == KEY_RIGHT:
+        return channel, cycle_channel(state.selected_channel, state.channels, 1)
+    updated, _ = handle_adjustment_key(key, channel, ctx)
+    return updated, None
 
 
 def handle_key(
     key: bytes, state: UiState, ctx: ChannelContext, msvcrt: Any
 ) -> tuple[UiState, bool]:
-    if key in KEY_QUIT:
-        return state, True
-    if key == KEY_TOGGLE:
-        return handle_toggle(state, ctx), False
-    if key in KEY_BACKSPACE:
-        return handle_backspace(ctx, state), False
-    if key == KEY_CONFIRM:
-        return handle_confirm(state), False
-    if key != KEY_EXTENDED:
-        updated, _ = handle_numeric_input(key, state, ctx)
-        return updated, False
+    should_quit = False
+    selected = state.channels[state.selected_channel]
+    updated = selected
+    next_selected = state.selected_channel
 
-    next_key = msvcrt.getch()
-    return handle_extended_key(next_key, state, ctx), False
+    if key in KEY_QUIT:
+        should_quit = True
+    elif key == KEY_TOGGLE:
+        updated = handle_toggle(selected, ctx)
+    elif key in KEY_BACKSPACE:
+        updated = handle_backspace(ctx, selected)
+    elif key == KEY_CONFIRM:
+        updated = handle_confirm(selected)
+    elif key != KEY_EXTENDED:
+        updated, _ = handle_numeric_input(key, selected, ctx)
+    else:
+        next_key = msvcrt.getch()
+        updated, new_selected = handle_extended_key(next_key, selected, ctx, state)
+        if new_selected is not None:
+            next_selected = new_selected
+
+    channels = {**state.channels, state.selected_channel: updated}
+    return UiState(next_selected, channels), should_quit
 
 
 def run_tui_loop(psu: RigolDP900, voltage: float, is_on: bool) -> None:
     import msvcrt  # Windows-only
 
-    channel_limits = {1: (CH1_MIN, CH1_MAX)}
-    selected_channel = 1
-    channel_label = "CH1"
-    min_v, max_v = channel_limits[selected_channel]
-    ctx = ChannelContext(psu, selected_channel, min_v, max_v)
-    state = UiState(voltage, is_on, "ON" if is_on else "OFF", "")
-    apply_voltage(ctx, voltage)
+    channel_limits = {
+        1: (CH1_MIN, CH1_MAX),
+        2: (CH2_MIN, CH2_MAX),
+        3: (CH3_MIN, CH3_MAX),
+    }
+    channels: dict[int, ChannelState] = {}
+    for channel_id, (min_v, max_v) in channel_limits.items():
+        start_voltage = clamp_voltage(voltage, min_v, max_v)
+        channels[channel_id] = ChannelState(
+            start_voltage,
+            is_on,
+            "ON" if is_on else "OFF",
+            "",
+        )
+        apply_voltage(ChannelContext(psu, channel_id, min_v, max_v), start_voltage)
+    state = UiState(1, channels)
 
     while True:
-        is_selected = selected_channel == 1
-        draw_screen(channel_label, state.voltage, state.status, is_selected)
+        boxes: list[list[str]] = []
+        for channel_id in (1, 2, 3):
+            channel = state.channels[channel_id]
+            label = f"CH{channel_id}"
+            is_selected = state.selected_channel == channel_id
+            boxes.append(
+                render_channel_box(label, channel.voltage, channel.status, is_selected)
+            )
+        draw_screen(boxes)
         key = msvcrt.getch()
+        selected_channel = state.selected_channel
+        min_v, max_v = channel_limits[selected_channel]
+        ctx = ChannelContext(psu, selected_channel, min_v, max_v)
         state, should_quit = handle_key(key, state, ctx, msvcrt)
         if should_quit:
             break
@@ -363,7 +420,7 @@ def main() -> int:
 
     if sys.platform != "win32":
         print("This TUI input loop currently supports Windows only.")
-        print(render_channel_box("CH1", voltage, "OFF", True))
+        print("\n".join(render_channel_box("CH1", voltage, "OFF", True)))
         return 1
 
     resource = args.resource or discover_resource()
