@@ -1,17 +1,22 @@
 # pyrigol
 
 Python control for Rigol DP900 series power supplies over USB or serial using
-PyVISA.
+PyVISA, with both a scripting-friendly CLI and an interactive TUI.
 
 ![Rigol DP932A power supply](docs/images/DP932a.png)
+
+## Features
+
+- CLI for scripting and automation.
+- Interactive TUI with per-channel control plus an ALL channel.
+- USB auto-discovery with serial (ASRL) support.
 
 ## Requirements
 
 - Python 3.12+
 - `uv`
 - NI-VISA (Windows) or another VISA implementation that provides `visa32.dll`
-  for USB discovery
-  - Download: https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html#585834
+  for USB discovery.
 
 ## Install
 
@@ -45,6 +50,38 @@ Single-channel output control:
 uv run pyrigol --resource "USB0::0x1AB1::0x0E11::DP9XXXXXXXX::INSTR" --ch1 5.0 --ch2 3.3 --ch3 1.8 --output-on 2
 ```
 
+## TUI
+
+The TUI auto-discovers the first USB VISA resource when `--resource` is not
+provided.
+
+Launch:
+
+```sh
+uv run pyrigol-tui
+```
+
+Controls:
+
+- Left/Right arrows: select channel (CH1, CH2, CH3, ALL).
+- Up/Down arrows: adjust voltage by 0.25 V (selected channel).
+- `0-9` + optional `.`: type a voltage value (max 2 digits before and after the
+  decimal).
+- Enter: confirm typed voltage.
+- Space: toggle output (selected channel).
+- Q: quit.
+
+Channel limits:
+
+- CH1/CH2: 0.00–32.00 V
+- CH3: 0.00–6.00 V
+
+ALL channel behavior:
+
+- Voltage updates are applied to all channels and clamped to each channel's
+  min/max.
+- Status shows `ON`, `OFF`, or `Mixed` when primary channels differ.
+
 ## EFT Test Script
 
 The EFT script steps all three channels together based on Enter presses. It
@@ -71,9 +108,7 @@ uv run pyrigol --resource "ASRL4::INSTR" --baud-rate 115200 --ch1 3.3 --ch2 3.3 
 If `*IDN?` times out on serial, try skipping it and adjusting terminations:
 
 ```sh
-uv run pyrigol --resource "ASRL4::INSTR" --baud-rate 115200 --read-term "
-" --write-term "
-" --no-idn --ch1 3.3 --ch2 3.3 --ch3 1.8 --output-on
+uv run pyrigol --resource "ASRL4::INSTR" --baud-rate 115200 --read-term "\n" --write-term "\n" --no-idn --ch1 3.3 --ch2 3.3 --ch3 1.8 --output-on
 ```
 
 ## Troubleshooting

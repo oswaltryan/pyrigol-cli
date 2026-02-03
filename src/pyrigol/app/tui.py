@@ -39,6 +39,8 @@ KEY_QUIT = (b"q", b"Q")
 ESC_REVERSE = "\x1b[7m"
 ESC_RESET = "\x1b[0m"
 DIGIT_KEYS = tuple(str(d).encode() for d in range(10))
+ALL_CHANNEL = 4
+PRIMARY_CHANNELS = (1, 2, 3)
 
 
 def _apply_reverse(line: str, enabled: bool) -> str:
@@ -235,6 +237,8 @@ class UiState:
 
 
 def apply_voltage(ctx: ChannelContext, value: float) -> None:
+    if ctx.selected_channel == ALL_CHANNEL:
+        return
     ctx.psu.set_voltage(ctx.selected_channel, value)
 
 
@@ -326,7 +330,8 @@ def handle_adjustment_key(
 def handle_toggle(channel: ChannelState, ctx: ChannelContext) -> ChannelState:
     is_on = not channel.is_on
     status = "ON" if is_on else "OFF"
-    ctx.psu.output_state(ctx.selected_channel, 1 if is_on else 0)
+    if ctx.selected_channel != ALL_CHANNEL:
+        ctx.psu.output_state(ctx.selected_channel, 1 if is_on else 0)
     return ChannelState(channel.voltage, is_on, status, channel.input_buffer)
 
 
@@ -345,11 +350,79 @@ def handle_extended_key(
     return updated, None
 
 
+def apply_all_state(
+    state: UiState,
+    previous: ChannelState,
+    channel_limits: dict[int, tuple[float, float]],
+    psu: RigolDP900,
+) -> UiState:
+    all_state = state.channels[ALL_CHANNEL]
+    channels = dict(state.channels)
+    if all_state.is_on != previous.is_on:
+        for channel_id in PRIMARY_CHANNELS:
+            psu.output_state(channel_id, 1 if all_state.is_on else 0)
+            channel = channels[channel_id]
+            channels[channel_id] = ChannelState(
+                channel.voltage,
+                all_state.is_on,
+                "ON" if all_state.is_on else "OFF",
+                channel.input_buffer,
+            )
+
+    if all_state.voltage != previous.voltage:
+        for channel_id in PRIMARY_CHANNELS:
+            min_v, max_v = channel_limits[channel_id]
+            clamped = clamp_voltage(all_state.voltage, min_v, max_v)
+            psu.set_voltage(channel_id, clamped)
+            channel = channels[channel_id]
+            channels[channel_id] = ChannelState(
+                clamped,
+                channel.is_on,
+                channel.status,
+                channel.input_buffer,
+            )
+
+    return UiState(state.selected_channel, channels)
+
+
+def sync_all_status(state: UiState) -> UiState:
+    all_state = state.channels[ALL_CHANNEL]
+    channel_states = [state.channels[ch] for ch in PRIMARY_CHANNELS]
+    any_on = any(ch.is_on for ch in channel_states)
+    all_on = all(ch.is_on for ch in channel_states)
+    if all_on:
+        status = "ON"
+        is_on = True
+    elif any_on:
+        status = "Mixed"
+        is_on = False
+    else:
+        status = "OFF"
+        is_on = False
+
+    if status == all_state.status and is_on == all_state.is_on:
+        return state
+
+    updated = ChannelState(
+        all_state.voltage,
+        is_on,
+        status,
+        all_state.input_buffer,
+    )
+    channels = {**state.channels, ALL_CHANNEL: updated}
+    return UiState(state.selected_channel, channels)
+
+
 def handle_key(
-    key: bytes, state: UiState, ctx: ChannelContext, msvcrt: Any
+    key: bytes,
+    state: UiState,
+    ctx: ChannelContext,
+    msvcrt: Any,
+    channel_limits: dict[int, tuple[float, float]],
 ) -> tuple[UiState, bool]:
     should_quit = False
     selected = state.channels[state.selected_channel]
+    previous = selected
     updated = selected
     next_selected = state.selected_channel
 
@@ -370,7 +443,10 @@ def handle_key(
             next_selected = new_selected
 
     channels = {**state.channels, state.selected_channel: updated}
-    return UiState(next_selected, channels), should_quit
+    next_state = UiState(next_selected, channels)
+    if state.selected_channel == ALL_CHANNEL:
+        next_state = apply_all_state(next_state, previous, channel_limits, ctx.psu)
+    return next_state, should_quit
 
 
 def run_tui_loop(psu: RigolDP900, voltage: float, is_on: bool) -> None:
@@ -380,6 +456,7 @@ def run_tui_loop(psu: RigolDP900, voltage: float, is_on: bool) -> None:
         1: (CH1_MIN, CH1_MAX),
         2: (CH2_MIN, CH2_MAX),
         3: (CH3_MIN, CH3_MAX),
+        ALL_CHANNEL: (min(CH1_MIN, CH2_MIN, CH3_MIN), max(CH1_MAX, CH2_MAX, CH3_MAX)),
     }
     channels: dict[int, ChannelState] = {}
     for channel_id, (min_v, max_v) in channel_limits.items():
@@ -392,12 +469,13 @@ def run_tui_loop(psu: RigolDP900, voltage: float, is_on: bool) -> None:
         )
         apply_voltage(ChannelContext(psu, channel_id, min_v, max_v), start_voltage)
     state = UiState(1, channels)
+    state = sync_all_status(state)
 
     while True:
         boxes: list[list[str]] = []
-        for channel_id in (1, 2, 3):
+        for channel_id in (*PRIMARY_CHANNELS, ALL_CHANNEL):
             channel = state.channels[channel_id]
-            label = f"CH{channel_id}"
+            label = "ALL" if channel_id == ALL_CHANNEL else f"CH{channel_id}"
             is_selected = state.selected_channel == channel_id
             boxes.append(
                 render_channel_box(label, channel.voltage, channel.status, is_selected)
@@ -407,7 +485,8 @@ def run_tui_loop(psu: RigolDP900, voltage: float, is_on: bool) -> None:
         selected_channel = state.selected_channel
         min_v, max_v = channel_limits[selected_channel]
         ctx = ChannelContext(psu, selected_channel, min_v, max_v)
-        state, should_quit = handle_key(key, state, ctx, msvcrt)
+        state, should_quit = handle_key(key, state, ctx, msvcrt, channel_limits)
+        state = sync_all_status(state)
         if should_quit:
             break
         time.sleep(0.02)
