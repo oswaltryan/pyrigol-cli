@@ -3,7 +3,7 @@
 Python control for Rigol DP900 series power supplies over USB or serial using
 PyVISA.
 
-![Rigol DP932A power supply](docs/images/dp932a.png)
+![Rigol DP932A power supply](docs/images/DP932a.png)
 
 ## Requirements
 

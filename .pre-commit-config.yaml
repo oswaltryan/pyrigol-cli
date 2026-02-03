@@ -36,8 +36,11 @@ repos:
         entry: mypy
         language: python
         types: [python]
+        pass_filenames: false
+        args: [ "." ]
         additional_dependencies:
-        -   mypy==1.10.0
+        -   .
+        -   mypy==1.19.1
         # Add types-* packages here as needed
         -   types-requests
         -   types-PyYAML
