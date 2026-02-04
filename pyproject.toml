@@ -1,6 +1,6 @@
 [project]
 name = "pyrigol"
-version = "0.1.0"
+version = "1.0.0"
 description = "Rigol DP900 series power supply control via PyVISA."
 readme = "README.md"
 requires-python = ">=3.12"

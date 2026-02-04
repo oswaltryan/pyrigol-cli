@@ -55,6 +55,8 @@ uv run pyrigol --resource "USB0::0x1AB1::0x0E11::DP9XXXXXXXX::INSTR" --ch1 5.0 -
 The TUI auto-discovers the first USB VISA resource when `--resource` is not
 provided.
 
+![pyrigol TUI preview](docs/images/TUI_preview.png)
+
 Launch:
 
 ```sh
@@ -64,23 +66,38 @@ uv run pyrigol-tui
 Controls:
 
 - Left/Right arrows: select channel (CH1, CH2, CH3, ALL).
-- Up/Down arrows: adjust voltage by 0.25 V (selected channel).
-- `0-9` + optional `.`: type a voltage value (max 2 digits before and after the
-  decimal).
+- Up/Down arrows: adjust voltage by step size (default 0.25 V).
+- `0-9` + optional `.`: type a voltage value (max 2 digits before and 3 after
+  the decimal).
 - Enter: confirm typed voltage.
 - Space: toggle output (selected channel).
-- Q: quit.
+- M: open the menu (step size + auto-apply).
+- Esc: exit (with confirmation prompt).
 
 Channel limits:
 
-- CH1/CH2: 0.00–32.00 V
-- CH3: 0.00–6.00 V
+- CH1/CH2: 0.00-32.00 V
+- CH3: 0.00-6.00 V
 
 ALL channel behavior:
 
 - Voltage updates are applied to all channels and clamped to each channel's
   min/max.
 - Status shows `ON`, `OFF`, or `Mixed` when primary channels differ.
+
+## Windows Executable (TUI)
+
+Build the standalone Windows executable:
+
+```sh
+pwsh build/windows/build.ps1
+```
+
+Output:
+
+```text
+dist/pyrigol-tui.exe
+```
 
 ## EFT Test Script
 

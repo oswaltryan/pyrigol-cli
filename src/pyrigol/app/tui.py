@@ -36,7 +36,7 @@ KEY_DOT = b"."
 DOT_CHAR = "."
 DOT_SPLIT_MAX = 1
 KEY_BACKSPACE = (b"\x08", b"\x7f")
-KEY_QUIT = (b"q", b"Q")
+KEY_ESCAPE = b"\x1b"
 KEY_MENU = (b"m", b"M")
 ESC_REVERSE = "\x1b[7m"
 ESC_RESET = "\x1b[0m"
@@ -233,8 +233,7 @@ def draw_screen(
         else:
             print("Up/Down to move")
             print("Enter to edit")
-            print("M to exit")
-            print("Q to quit")
+            print("Esc to exit")
         return
 
     for row in zip(*boxes, strict=True):
@@ -243,7 +242,7 @@ def draw_screen(
     print(f"Use Up/Down arrows to adjust by {step_size:.2f} V. Space toggles.")
     print("Type 0-9 and optional '.' to set voltage. Enter confirms.")
     print("Press Left/Right arrows to select a channel. Press M for menu.")
-    print("Press Q to quit.")
+    print("Press Esc to exit.")
 
 
 def clamp_voltage(voltage: float, min_v: float, max_v: float) -> float:
@@ -567,20 +566,31 @@ def handle_key(
     channel_limits: dict[int, tuple[float, float]],
 ) -> tuple[UiState, bool]:
     should_quit = False
-    if key in KEY_QUIT:
-        return state, True
     if key in KEY_MENU:
-        return UiState(
-            state.selected_channel,
-            state.channels,
-            not state.menu_open,
-            state.menu_index,
-            state.auto_apply,
-            state.voltage_step,
-            False,
-            "",
-        ), False
+        if not state.menu_open:
+            return UiState(
+                state.selected_channel,
+                state.channels,
+                True,
+                state.menu_index,
+                state.auto_apply,
+                state.voltage_step,
+                False,
+                "",
+            ), False
+        return state, False
     if state.menu_open:
+        if key == KEY_ESCAPE:
+            return UiState(
+                state.selected_channel,
+                state.channels,
+                False,
+                state.menu_index,
+                state.auto_apply,
+                state.voltage_step,
+                False,
+                "",
+            ), False
         if state.menu_editing:
             step_ctx = ChannelContext(ctx.psu, ctx.selected_channel, STEP_MIN, STEP_MAX)
             step_state = ChannelState(
@@ -661,6 +671,22 @@ def handle_key(
     next_selected = state.selected_channel
     confirm_apply = False
 
+    if key == KEY_ESCAPE:
+        if selected.input_buffer:
+            updated = ChannelState(selected.voltage, selected.is_on, selected.status, "")
+            channels = {**state.channels, state.selected_channel: updated}
+            return UiState(
+                next_selected,
+                channels,
+                state.menu_open,
+                state.menu_index,
+                state.auto_apply,
+                state.voltage_step,
+                state.menu_editing,
+                state.menu_input_buffer,
+            ), False
+        return state, confirm_exit(msvcrt)
+
     if key == KEY_TOGGLE:
         updated = handle_toggle(selected, ctx)
     elif key in KEY_BACKSPACE:
@@ -714,6 +740,23 @@ def handle_key(
 
 def _load_msvcrt() -> Any:
     return importlib.import_module("msvcrt")
+
+
+def confirm_exit(msvcrt: Any) -> bool:
+    prompt = "Would you like to exit the program (Y/N)? "
+    print(prompt, end="", flush=True)
+    while True:
+        key = msvcrt.getch()
+        if key in (b"y", b"Y"):
+            print("Y")
+            return True
+        if key in (b"n", b"N"):
+            print("N")
+            return False
+        if key in (b"\r", b"\n"):
+            continue
+        if key == KEY_EXTENDED:
+            msvcrt.getch()
 
 
 def run_tui_loop(psu: RigolDP900, voltage: float, is_on: bool) -> None:
