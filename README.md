@@ -137,8 +137,8 @@ uv run pyrigol --resource "ASRL4::INSTR" --baud-rate 115200 --read-term "\n" --w
 
 ## Development
 
-Install pre-commit hooks:
+Enable repo-managed git hooks:
 
 ```sh
-uv run pre-commit install
+git config core.hooksPath .githooks
 ```

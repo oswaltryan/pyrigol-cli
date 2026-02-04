@@ -1,5 +1,5 @@
 [project]
-name = "pyrigol"
+name = "pyrigol-cli"
 version = "1.0.0"
 description = "Rigol DP900 series power supply control via PyVISA."
 readme = "README.md"
@@ -61,7 +61,7 @@ package = true
 
 [tool.ruff]
 src = ["src"]
-line-length = 88
+line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]

@@ -33,9 +33,7 @@ def list_resources() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Set DP900 channel voltages over USB (PyVISA)."
-    )
+    parser = argparse.ArgumentParser(description="Set DP900 channel voltages over USB (PyVISA).")
     parser.add_argument(
         "--list",
         action="store_true",
@@ -112,15 +110,18 @@ def parse_args() -> argparse.Namespace:
         help="Turn outputs off after setting voltages. "
         "Use no value for all channels or 1/2/3 for a single channel.",
     )
+    output_group.add_argument(
+        "--output-status",
+        nargs="?",
+        const="all",
+        choices=["all", "1", "2", "3"],
+        help="Query output state and exit. "
+        "Use no value for all channels or 1/2/3 for a single channel.",
+    )
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
-    if args.list:
-        list_resources()
-        return 0
-
+def build_serial_settings(args: argparse.Namespace) -> dict[str, Any]:
     parity_map = {
         "none": visa_constants.Parity.none,
         "odd": visa_constants.Parity.odd,
@@ -133,7 +134,7 @@ def main() -> int:
     }
     read_term = None if args.read_term == "" else args.read_term
     write_term = None if args.write_term == "" else args.write_term
-    serial_settings: dict[str, Any] = {
+    return {
         "baud_rate": args.baud_rate,
         "data_bits": args.data_bits,
         "parity": parity_map[args.parity],
@@ -141,32 +142,54 @@ def main() -> int:
         "read_termination": read_term,
         "write_termination": write_term,
     }
+
+
+def channels_from_option(option: str) -> list[int]:
+    if option == "all":
+        return [1, 2, 3]
+    return [int(option)]
+
+
+def print_output_status(psu: RigolDP900, option: str) -> None:
+    for channel in channels_from_option(option):
+        is_on = psu.get_output_state(channel)
+        status = "ON" if is_on else "OFF"
+        print(f"CH{channel}: {status}")
+
+
+def apply_output_state(psu: RigolDP900, option: str, state: int) -> None:
+    for channel in channels_from_option(option):
+        psu.output_state(channel, state)
+
+
+def main() -> int:
+    args = parse_args()
+    if args.list:
+        list_resources()
+        return 0
+    serial_settings = build_serial_settings(args)
     psu = RigolDP900(
         args.resource,
         RigolDP900.loglevel.INFO,
         timeout_ms=args.timeout_ms,
         serial_settings=serial_settings,
     )
-    if not args.no_idn:
-        psu.print_info()
-    psu.set_voltage(1, args.ch1)
-    psu.set_voltage(2, args.ch2)
-    psu.set_voltage(3, args.ch3)
+    try:
+        if not args.no_idn:
+            psu.print_info()
+        if args.output_status is not None:
+            print_output_status(psu, args.output_status)
+            return 0
+        psu.set_voltage(1, args.ch1)
+        psu.set_voltage(2, args.ch2)
+        psu.set_voltage(3, args.ch3)
 
-    if args.output_on is not None:
-        if args.output_on == "all":
-            for channel in (1, 2, 3):
-                psu.output_state(channel, 1)
-        else:
-            psu.output_state(int(args.output_on), 1)
-    if args.output_off is not None:
-        if args.output_off == "all":
-            for channel in (1, 2, 3):
-                psu.output_state(channel, 0)
-        else:
-            psu.output_state(int(args.output_off), 0)
-
-    psu.close()
+        if args.output_on is not None:
+            apply_output_state(psu, args.output_on, 1)
+        if args.output_off is not None:
+            apply_output_state(psu, args.output_off, 0)
+    finally:
+        psu.close()
     return 0
 
 

@@ -46,6 +46,7 @@ PRIMARY_CHANNELS = (1, 2, 3)
 DEFAULT_STEP = 0.25
 STEP_MIN = 0.0
 STEP_MAX = 10.0
+VOLTAGE_TOLERANCE = 1e-6
 
 
 def _apply_reverse(line: str, enabled: bool) -> str:
@@ -70,10 +71,18 @@ def _format_inner(text: str, width: int) -> str:
 
 
 def render_channel_box(
-    channel_label: str, voltage: float, status: str, is_selected: bool
+    channel_label: str, voltage_display: str, status: str, is_selected: bool
 ) -> list[str]:
-    voltage_text = f"  Voltage: {voltage:>5.2f} V"
-    status_text = f"  Status : {status:<3}"
+    status_display = {
+        "ON": " ON",
+        "OFF": " OFF",
+        "Mixed": " Mixed",
+    }.get(status, status)
+    if voltage_display == "Mixed":
+        voltage_text = "  Voltage:  Mixed"
+    else:
+        voltage_text = f"  Voltage: {voltage_display.rjust(6)} V"
+    status_text = f"  Status : {status_display:<3}"
     header_text = f"           {channel_label}            "
     return [
         "+--------------------------+",
@@ -249,9 +258,7 @@ def clamp_voltage(voltage: float, min_v: float, max_v: float) -> float:
     return max(min_v, min(max_v, voltage))
 
 
-def cycle_channel(
-    current: int, channels: dict[int, ChannelState], direction: int
-) -> int:
+def cycle_channel(current: int, channels: dict[int, ChannelState], direction: int) -> int:
     ordered = sorted(channels)
     if current not in channels:
         return ordered[0]
@@ -294,6 +301,19 @@ class MenuItem:
     label: str
     value: str
     editable: bool
+
+
+def update_state(state: UiState, **updates: Any) -> UiState:
+    return UiState(
+        updates.get("selected_channel", state.selected_channel),
+        updates.get("channels", state.channels),
+        updates.get("menu_open", state.menu_open),
+        updates.get("menu_index", state.menu_index),
+        updates.get("auto_apply", state.auto_apply),
+        updates.get("voltage_step", state.voltage_step),
+        updates.get("menu_editing", state.menu_editing),
+        updates.get("menu_input_buffer", state.menu_input_buffer),
+    )
 
 
 def build_menu_settings(state: UiState) -> list[MenuItem]:
@@ -349,9 +369,7 @@ def try_build_candidate(input_buffer: str, key: bytes) -> str | None:
     return None
 
 
-def handle_backspace(
-    ctx: ChannelContext, channel: ChannelState, auto_apply: bool
-) -> ChannelState:
+def handle_backspace(ctx: ChannelContext, channel: ChannelState, auto_apply: bool) -> ChannelState:
     if not channel.input_buffer:
         return channel
 
@@ -378,9 +396,7 @@ def handle_numeric_input(
     if candidate is None:
         return channel, False
 
-    buffer_value, voltage, applied = try_apply_candidate(
-        candidate, channel.voltage, ctx
-    )
+    buffer_value, voltage, applied = try_apply_candidate(candidate, channel.voltage, ctx)
     if not applied:
         return channel, False
 
@@ -428,9 +444,7 @@ def handle_extended_key(
         return channel, cycle_channel(state.selected_channel, state.channels, -1)
     if key == KEY_RIGHT:
         return channel, cycle_channel(state.selected_channel, state.channels, 1)
-    updated, _ = handle_adjustment_key(
-        key, channel, ctx, state.auto_apply, state.voltage_step
-    )
+    updated, _ = handle_adjustment_key(key, channel, ctx, state.auto_apply, state.voltage_step)
     return updated, None
 
 
@@ -523,9 +537,7 @@ def cycle_menu_index(current: int, delta: int, total: int) -> int:
     return (current + delta) % total
 
 
-def apply_menu_action(
-    state: UiState
-) -> UiState:
+def apply_menu_action(state: UiState) -> UiState:
     settings = build_menu_settings(state)
     if not settings:
         return state
@@ -558,167 +570,130 @@ def apply_menu_action(
     return state
 
 
-def handle_key(
+def update_menu_index(state: UiState, delta: int) -> UiState:
+    total = len(build_menu_settings(state))
+    next_index = cycle_menu_index(state.menu_index, delta, total)
+    return update_state(state, menu_index=next_index)
+
+
+def handle_menu_editing_key(key: bytes, state: UiState, ctx: ChannelContext) -> UiState:
+    step_ctx = ChannelContext(ctx.psu, ctx.selected_channel, STEP_MIN, STEP_MAX)
+    step_state = ChannelState(state.voltage_step, False, "", state.menu_input_buffer)
+    if key == KEY_CONFIRM:
+        return update_state(
+            state,
+            voltage_step=step_state.voltage,
+            menu_editing=False,
+            menu_input_buffer="",
+        )
+    if key in KEY_BACKSPACE:
+        updated = handle_backspace(step_ctx, step_state, False)
+        return update_state(
+            state,
+            voltage_step=updated.voltage,
+            menu_input_buffer=updated.input_buffer,
+        )
+    if key != KEY_EXTENDED:
+        updated, _ = handle_numeric_input(key, step_state, step_ctx, False)
+        return update_state(
+            state,
+            voltage_step=updated.voltage,
+            menu_input_buffer=updated.input_buffer,
+        )
+    return state
+
+
+def handle_menu_key(
+    key: bytes,
+    state: UiState,
+    ctx: ChannelContext,
+    msvcrt: Any,
+) -> UiState:
+    if key == KEY_ESCAPE:
+        return update_state(
+            state,
+            menu_open=False,
+            menu_editing=False,
+            menu_input_buffer="",
+        )
+    if state.menu_editing:
+        return handle_menu_editing_key(key, state, ctx)
+    if key == KEY_CONFIRM:
+        return apply_menu_action(state)
+    if key != KEY_EXTENDED:
+        return state
+
+    next_key = msvcrt.getch()
+    delta = 0
+    if next_key == KEY_UP:
+        delta = -1
+    elif next_key == KEY_DOWN:
+        delta = 1
+    if delta:
+        return update_menu_index(state, delta)
+    return state
+
+
+def handle_main_escape(
+    state: UiState, selected: ChannelState, ctx: ChannelContext, msvcrt: Any
+) -> tuple[UiState, bool]:
+    if selected.input_buffer:
+        updated = ChannelState(selected.voltage, selected.is_on, selected.status, "")
+        channels = {**state.channels, state.selected_channel: updated}
+        return update_state(state, channels=channels), False
+    return state, confirm_exit(msvcrt)
+
+
+def handle_non_extended_key(
+    key: bytes, selected: ChannelState, ctx: ChannelContext, state: UiState
+) -> tuple[ChannelState, bool]:
+    if key == KEY_TOGGLE:
+        return handle_toggle(selected, ctx), False
+    if key in KEY_BACKSPACE:
+        return handle_backspace(ctx, selected, state.auto_apply), False
+    if key == KEY_CONFIRM:
+        return handle_confirm(selected), True
+    updated, _ = handle_numeric_input(key, selected, ctx, state.auto_apply)
+    return updated, False
+
+
+def handle_extended_input(
+    msvcrt: Any, selected: ChannelState, ctx: ChannelContext, state: UiState
+) -> tuple[ChannelState, int]:
+    next_key = msvcrt.getch()
+    updated, new_selected = handle_extended_key(next_key, selected, ctx, state)
+    next_selected = state.selected_channel if new_selected is None else new_selected
+    return updated, next_selected
+
+
+def handle_main_key(
     key: bytes,
     state: UiState,
     ctx: ChannelContext,
     msvcrt: Any,
     channel_limits: dict[int, tuple[float, float]],
 ) -> tuple[UiState, bool]:
-    should_quit = False
-    if key in KEY_MENU:
-        if not state.menu_open:
-            return UiState(
-                state.selected_channel,
-                state.channels,
-                True,
-                state.menu_index,
-                state.auto_apply,
-                state.voltage_step,
-                False,
-                "",
-            ), False
-        return state, False
-    if state.menu_open:
-        if key == KEY_ESCAPE:
-            return UiState(
-                state.selected_channel,
-                state.channels,
-                False,
-                state.menu_index,
-                state.auto_apply,
-                state.voltage_step,
-                False,
-                "",
-            ), False
-        if state.menu_editing:
-            step_ctx = ChannelContext(ctx.psu, ctx.selected_channel, STEP_MIN, STEP_MAX)
-            step_state = ChannelState(
-                state.voltage_step, False, "", state.menu_input_buffer
-            )
-            if key == KEY_CONFIRM:
-                return UiState(
-                    state.selected_channel,
-                    state.channels,
-                    True,
-                    state.menu_index,
-                    state.auto_apply,
-                    step_state.voltage,
-                    False,
-                    "",
-                ), False
-            if key in KEY_BACKSPACE:
-                updated = handle_backspace(step_ctx, step_state, False)
-                return UiState(
-                    state.selected_channel,
-                    state.channels,
-                    True,
-                    state.menu_index,
-                    state.auto_apply,
-                    updated.voltage,
-                    True,
-                    updated.input_buffer,
-                ), False
-            if key != KEY_EXTENDED:
-                updated, _ = handle_numeric_input(
-                    key, step_state, step_ctx, False
-                )
-                return UiState(
-                    state.selected_channel,
-                    state.channels,
-                    True,
-                    state.menu_index,
-                    state.auto_apply,
-                    updated.voltage,
-                    True,
-                    updated.input_buffer,
-                ), False
-            return state, False
-        if key == KEY_CONFIRM:
-            return apply_menu_action(state), False
-        if key != KEY_EXTENDED:
-            return state, False
-        next_key = msvcrt.getch()
-        total = len(build_menu_settings(state))
-        if next_key == KEY_UP:
-            next_index = cycle_menu_index(state.menu_index, -1, total)
-            return UiState(
-                state.selected_channel,
-                state.channels,
-                True,
-                next_index,
-                state.auto_apply,
-                state.voltage_step,
-                state.menu_editing,
-                state.menu_input_buffer,
-            ), False
-        if next_key == KEY_DOWN:
-            next_index = cycle_menu_index(state.menu_index, 1, total)
-            return UiState(
-                state.selected_channel,
-                state.channels,
-                True,
-                next_index,
-                state.auto_apply,
-                state.voltage_step,
-                state.menu_editing,
-                state.menu_input_buffer,
-            ), False
-        return state, False
     selected = state.channels[state.selected_channel]
-    previous = selected
-    updated = selected
-    next_selected = state.selected_channel
-    confirm_apply = False
-
     if key == KEY_ESCAPE:
-        if selected.input_buffer:
-            updated = ChannelState(selected.voltage, selected.is_on, selected.status, "")
-            channels = {**state.channels, state.selected_channel: updated}
-            return UiState(
-                next_selected,
-                channels,
-                state.menu_open,
-                state.menu_index,
-                state.auto_apply,
-                state.voltage_step,
-                state.menu_editing,
-                state.menu_input_buffer,
-            ), False
-        return state, confirm_exit(msvcrt)
+        return handle_main_escape(state, selected, ctx, msvcrt)
 
-    if key == KEY_TOGGLE:
-        updated = handle_toggle(selected, ctx)
-    elif key in KEY_BACKSPACE:
-        updated = handle_backspace(ctx, selected, state.auto_apply)
-    elif key == KEY_CONFIRM:
-        updated = handle_confirm(selected)
-        confirm_apply = True
-    elif key != KEY_EXTENDED:
-        updated, _ = handle_numeric_input(
-            key, selected, ctx, state.auto_apply
-        )
+    if key == KEY_EXTENDED:
+        updated, next_selected = handle_extended_input(msvcrt, selected, ctx, state)
+        confirm_apply = False
     else:
-        next_key = msvcrt.getch()
-        updated, new_selected = handle_extended_key(next_key, selected, ctx, state)
-        if new_selected is not None:
-            next_selected = new_selected
+        updated, confirm_apply = handle_non_extended_key(key, selected, ctx, state)
+        next_selected = state.selected_channel
 
     channels = {**state.channels, state.selected_channel: updated}
-    next_state = UiState(
-        next_selected,
-        channels,
-        state.menu_open,
-        state.menu_index,
-        state.auto_apply,
-        state.voltage_step,
-        state.menu_editing,
-        state.menu_input_buffer,
+    next_state = update_state(
+        state,
+        selected_channel=next_selected,
+        channels=channels,
     )
     if state.selected_channel == ALL_CHANNEL:
         next_state = apply_all_state(
             next_state,
-            previous,
+            selected,
             channel_limits,
             ctx.psu,
             state.auto_apply,
@@ -727,7 +702,7 @@ def handle_key(
         if state.selected_channel == ALL_CHANNEL:
             next_state = apply_all_state(
                 next_state,
-                previous,
+                selected,
                 channel_limits,
                 ctx.psu,
                 state.auto_apply,
@@ -735,11 +710,116 @@ def handle_key(
             )
         else:
             apply_voltage(ctx, updated.voltage)
-    return next_state, should_quit
+    return next_state, False
+
+
+def handle_key(
+    key: bytes,
+    state: UiState,
+    ctx: ChannelContext,
+    msvcrt: Any,
+    channel_limits: dict[int, tuple[float, float]],
+) -> tuple[UiState, bool]:
+    if key in KEY_MENU and not state.menu_open:
+        return (
+            update_state(
+                state,
+                menu_open=True,
+                menu_editing=False,
+                menu_input_buffer="",
+            ),
+            False,
+        )
+    if state.menu_open:
+        return handle_menu_key(key, state, ctx, msvcrt), False
+    return handle_main_key(key, state, ctx, msvcrt, channel_limits)
 
 
 def _load_msvcrt() -> Any:
     return importlib.import_module("msvcrt")
+
+
+def read_output_states(psu: RigolDP900, fallback: bool) -> dict[int, bool]:
+    states: dict[int, bool] = {}
+    for channel in PRIMARY_CHANNELS:
+        try:
+            states[channel] = psu.get_output_state(channel)
+        except Exception:
+            states[channel] = fallback
+    return states
+
+
+def read_voltages(psu: RigolDP900, fallback: float) -> dict[int, float]:
+    values: dict[int, float] = {}
+    for channel in PRIMARY_CHANNELS:
+        try:
+            values[channel] = psu.get_voltage(channel)
+        except Exception:
+            values[channel] = fallback
+    return values
+
+
+def derive_all_voltage(voltages: dict[int, float], fallback: float) -> float:
+    for channel in PRIMARY_CHANNELS:
+        if channel in voltages:
+            return voltages[channel]
+    return fallback
+
+
+def build_channel_limits() -> dict[int, tuple[float, float]]:
+    return {
+        1: (CH1_MIN, CH1_MAX),
+        2: (CH2_MIN, CH2_MAX),
+        3: (CH3_MIN, CH3_MAX),
+        ALL_CHANNEL: (
+            min(CH1_MIN, CH2_MIN, CH3_MIN),
+            max(CH1_MAX, CH2_MAX, CH3_MAX),
+        ),
+    }
+
+
+def initialize_state(
+    psu: RigolDP900,
+    voltage: float,
+    is_on: bool,
+    channel_limits: dict[int, tuple[float, float]],
+) -> UiState:
+    output_states = read_output_states(psu, is_on)
+    voltages = read_voltages(psu, voltage)
+    all_voltage = derive_all_voltage(voltages, voltage)
+    channels: dict[int, ChannelState] = {}
+    for channel_id, (min_v, max_v) in channel_limits.items():
+        raw_voltage = (
+            all_voltage if channel_id == ALL_CHANNEL else voltages.get(channel_id, voltage)
+        )
+        start_voltage = clamp_voltage(raw_voltage, min_v, max_v)
+        channel_is_on = output_states[channel_id] if channel_id in PRIMARY_CHANNELS else is_on
+        channels[channel_id] = ChannelState(
+            start_voltage,
+            channel_is_on,
+            "ON" if channel_is_on else "OFF",
+            "",
+        )
+        apply_voltage(ChannelContext(psu, channel_id, min_v, max_v), start_voltage)
+    state = UiState(1, channels, False, 0, True, DEFAULT_STEP, False, "")
+    return sync_all_status(state)
+
+
+def build_boxes(state: UiState) -> list[list[str]]:
+    boxes: list[list[str]] = []
+    primary_voltages = [state.channels[ch].voltage for ch in PRIMARY_CHANNELS]
+    all_voltage = primary_voltages[0] if primary_voltages else 0.0
+    all_mixed = any(abs(v - all_voltage) > VOLTAGE_TOLERANCE for v in primary_voltages[1:])
+    for channel_id in (*PRIMARY_CHANNELS, ALL_CHANNEL):
+        channel = state.channels[channel_id]
+        label = "ALL" if channel_id == ALL_CHANNEL else f"CH{channel_id}"
+        is_selected = state.selected_channel == channel_id
+        if channel_id == ALL_CHANNEL and all_mixed:
+            voltage_display = "Mixed"
+        else:
+            voltage_display = f"{channel.voltage:.3f}"
+        boxes.append(render_channel_box(label, voltage_display, channel.status, is_selected))
+    return boxes
 
 
 def confirm_exit(msvcrt: Any) -> bool:
@@ -762,34 +842,11 @@ def confirm_exit(msvcrt: Any) -> bool:
 def run_tui_loop(psu: RigolDP900, voltage: float, is_on: bool) -> None:
     msvcrt = cast(Any, _load_msvcrt())  # Windows-only
 
-    channel_limits = {
-        1: (CH1_MIN, CH1_MAX),
-        2: (CH2_MIN, CH2_MAX),
-        3: (CH3_MIN, CH3_MAX),
-        ALL_CHANNEL: (min(CH1_MIN, CH2_MIN, CH3_MIN), max(CH1_MAX, CH2_MAX, CH3_MAX)),
-    }
-    channels: dict[int, ChannelState] = {}
-    for channel_id, (min_v, max_v) in channel_limits.items():
-        start_voltage = clamp_voltage(voltage, min_v, max_v)
-        channels[channel_id] = ChannelState(
-            start_voltage,
-            is_on,
-            "ON" if is_on else "OFF",
-            "",
-        )
-        apply_voltage(ChannelContext(psu, channel_id, min_v, max_v), start_voltage)
-    state = UiState(1, channels, False, 0, True, DEFAULT_STEP, False, "")
-    state = sync_all_status(state)
+    channel_limits = build_channel_limits()
+    state = initialize_state(psu, voltage, is_on, channel_limits)
 
     while True:
-        boxes: list[list[str]] = []
-        for channel_id in (*PRIMARY_CHANNELS, ALL_CHANNEL):
-            channel = state.channels[channel_id]
-            label = "ALL" if channel_id == ALL_CHANNEL else f"CH{channel_id}"
-            is_selected = state.selected_channel == channel_id
-            boxes.append(
-                render_channel_box(label, channel.voltage, channel.status, is_selected)
-            )
+        boxes = build_boxes(state)
         menu_settings = build_menu_settings(state)
         menu_lines = render_menu(menu_settings, state.menu_index)
         draw_screen(
@@ -817,7 +874,7 @@ def main() -> int:
 
     if sys.platform != "win32":
         print("This TUI input loop currently supports Windows only.")
-        print("\n".join(render_channel_box("CH1", voltage, "OFF", True)))
+        print("\n".join(render_channel_box("CH1", f"{voltage:.3f}", "OFF", True)))
         return 1
 
     resource = args.resource or discover_resource()

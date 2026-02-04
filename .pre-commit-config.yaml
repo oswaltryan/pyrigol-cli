@@ -12,6 +12,7 @@ repos:
     -   id: end-of-file-fixer
     -   id: check-yaml
     -   id: check-added-large-files
+        exclude: ^docs/DP900_programming_guide\.pdf$
 
 -   repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.

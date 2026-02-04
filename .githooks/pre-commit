@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+if command -v uv >/dev/null 2>&1; then
+  exec uv run pre-commit run --hook-stage pre-commit
+fi
+
+if command -v pre-commit >/dev/null 2>&1; then
+  exec pre-commit run --hook-stage pre-commit
+fi
+
+if command -v python >/dev/null 2>&1; then
+  exec python -m pre_commit run --hook-stage pre-commit
+fi
+
+echo "pre-commit is required to commit. Install it and try again." >&2
+exit 1

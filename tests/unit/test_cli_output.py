@@ -50,6 +50,7 @@ def test_output_off_turns_off_all_channels(monkeypatch: Any) -> None:
             ch1=1.0,
             ch2=1.0,
             ch3=1.0,
+            output_status=None,
             output_on=None,
             output_off="all",
         )
@@ -79,6 +80,7 @@ def test_output_on_single_channel(monkeypatch: Any) -> None:
             ch1=1.0,
             ch2=1.0,
             ch3=1.0,
+            output_status=None,
             output_on="2",
             output_off=None,
         )

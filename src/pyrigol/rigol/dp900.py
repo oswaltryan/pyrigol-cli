@@ -31,9 +31,7 @@ def _get_logger(name: str, level: int) -> logging.Logger:
     if not logger.handlers:
         handler = logging.StreamHandler()
         handler.setLevel(level)
-        formatter = logging.Formatter(
-            "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s %(name)-12s %(levelname)-8s %(message)s")
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     return logger
@@ -57,9 +55,7 @@ class _RigolDP900:
                 settings = serial_settings or {}
                 self.device.baud_rate = settings.get("baud_rate", 115200)
                 self.device.data_bits = settings.get("data_bits", 8)
-                self.device.stop_bits = settings.get(
-                    "stop_bits", visa_constants.StopBits.one
-                )
+                self.device.stop_bits = settings.get("stop_bits", visa_constants.StopBits.one)
                 self.device.parity = settings.get("parity", visa_constants.Parity.none)
                 read_term = settings.get("read_termination", "\n")
                 write_term = settings.get("write_termination", "\n")
@@ -112,6 +108,23 @@ class _RigolDP900:
         state_str = "ON" if state else "OFF"
         self.send_command(f":OUTP CH{channel},{state_str}")
         self.logger.info("CH%s output set to %s", channel, state_str)
+
+    def get_output_state(self, channel: int = 1) -> bool:
+        response = self.query_command(f":OUTP? CH{channel}")
+        cleaned = response.strip().upper()
+        if cleaned in ("1", "ON"):
+            return True
+        if cleaned in ("0", "OFF"):
+            return False
+        raise ValueError(f"Unexpected output state response: {response!r}")
+
+    def get_voltage(self, channel: int = 1) -> float:
+        response = self.query_command(f":SOUR{channel}:VOLT?")
+        cleaned = response.strip()
+        try:
+            return float(cleaned)
+        except ValueError as exc:
+            raise ValueError(f"Unexpected voltage response: {response!r}") from exc
 
     def close(self) -> None:
         self.device.close()
