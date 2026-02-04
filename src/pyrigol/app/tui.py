@@ -150,6 +150,7 @@ def discover_resource() -> str | None:
             "download.ni-visa.html#585834",
             file=sys.stderr,
         )
+        input("Press Enter to exit program...")
         return None
 
     usb_resources = resources.list_resources("USB?*")
@@ -164,6 +165,7 @@ def discover_resource() -> str | None:
         "Warning: No VISA resources found. Is the device connected?",
         file=sys.stderr,
     )
+    input("Press Enter to exit program...")
     return None
 
 

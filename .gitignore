@@ -28,7 +28,7 @@ coverage.xml
 *.cover
 
 # --- Build, Distribution & Packaging ---
-build/
+build/pyinstaller/
 develop-eggs/
 dist/
 downloads/
