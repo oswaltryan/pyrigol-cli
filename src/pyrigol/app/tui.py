@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import pyvisa as visa
 import pyvisa.constants as visa_constants
@@ -449,8 +450,12 @@ def handle_key(
     return next_state, should_quit
 
 
+def _load_msvcrt() -> Any:
+    return importlib.import_module("msvcrt")
+
+
 def run_tui_loop(psu: RigolDP900, voltage: float, is_on: bool) -> None:
-    import msvcrt  # Windows-only
+    msvcrt = cast(Any, _load_msvcrt())  # Windows-only
 
     channel_limits = {
         1: (CH1_MIN, CH1_MAX),
