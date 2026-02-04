@@ -79,9 +79,7 @@ def test_driver_uses_default_backend(monkeypatch: Any) -> None:
     assert called["kwargs"] == {}
 
 
-def test_list_resources_warns_when_backend_missing(
-    monkeypatch: Any, capsys: Any
-) -> None:
+def test_list_resources_warns_when_backend_missing(monkeypatch: Any, capsys: Any) -> None:
     def fake_resource_manager(*_args: Any, **_kwargs: Any) -> _FakeResourceManager:
         raise RuntimeError("no visa library")
 
