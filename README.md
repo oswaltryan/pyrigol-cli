@@ -18,13 +18,14 @@ PyVISA, with both a scripting-friendly CLI and an interactive TUI.
 - NI-VISA (Windows) or another VISA implementation that provides `visa32.dll`
   for USB discovery.
 
-## Install
+## Development
 
 ```sh
 uv sync
+uv run pre-commit install
 ```
 
-## Quickstart
+## Usage
 
 List VISA resources:
 
@@ -50,48 +51,6 @@ Single-channel output control:
 uv run pyrigol --resource "USB0::0x1AB1::0x0E11::DP9XXXXXXXX::INSTR" --ch1 5.0 --ch2 3.3 --ch3 1.8 --output-on 2
 ```
 
-## TUI
-
-The TUI auto-discovers the first USB VISA resource when `--resource` is not
-provided.
-
-![pyrigol TUI preview](docs/images/TUI_preview.png)
-
-Launch:
-
-```sh
-uv run pyrigol-tui
-```
-
-Controls:
-
-- Left/Right arrows: select channel (CH1, CH2, CH3, ALL).
-- Up/Down arrows: adjust voltage by step size (default 0.25 V).
-- `0-9` + optional `.`: type a voltage value (max 2 digits before and 3 after
-  the decimal).
-- Enter: confirm typed voltage.
-- Space: toggle output (selected channel).
-- Tab: open the menu (step size + auto-apply).
-- Esc: exit (with confirmation prompt).
-
-Menu controls:
-
-- Up/Down arrows: switch menu item.
-- Space: toggle the selected item (including Auto-Apply).
-- Enter: edit/apply Voltage Step Size.
-- Esc: exit setting (while editing) or exit menu.
-
-Channel limits:
-
-- CH1/CH2: 0.00-32.00 V
-- CH3: 0.00-6.00 V
-
-ALL channel behavior:
-
-- Voltage updates are applied to all channels and clamped to each channel's
-  min/max.
-- Status shows `ON`, `OFF`, or `Mixed` when primary channels differ.
-
 ## Windows Executable (TUI)
 
 Build the standalone Windows executable:
@@ -106,20 +65,32 @@ Output:
 dist/pyrigol-tui.exe
 ```
 
-## EFT Test Script
+![pyrigol TUI preview](docs/images/TUI_preview.png)
 
-The EFT script steps all three channels together based on Enter presses. It
-auto-discovers the first USB VISA resource when no arguments are provided.
+Launch:
 
+The TUI auto-discovers the first USB VISA resource when `--resource` is not
+provided.
 ```sh
-uv run python scripts/eft_test_script.py
+uv run pyrigol-tui
 ```
 
-To use a specific resource:
+Or launch the Windows executable:
 
 ```sh
-uv run python scripts/eft_test_script.py --resource "USB0::0x1AB1::0x0E11::DP9XXXXXXXX::INSTR"
+dist/pyrigol-tui.exe
 ```
+
+Channel limits:
+
+- CH1/CH2: 0.00-32.00 V
+- CH3: 0.00-6.00 V
+
+ALL channel behavior:
+
+- Voltage updates are applied to all channels and clamped to each channel's
+  min/max.
+- Status shows `ON`, `OFF`, or `Mixed` when primary channels differ.
 
 ## Serial (ASRL) Notes
 
@@ -141,11 +112,3 @@ uv run pyrigol --resource "ASRL4::INSTR" --baud-rate 115200 --read-term "\n" --w
   present on the system PATH.
 - "No USB VISA resources found": Confirm the device is connected via USB and
   the driver is installed. Some devices enumerate under NI-VISA only.
-
-## Development
-
-Enable repo-managed git hooks:
-
-```sh
-git config core.hooksPath .githooks
-```
