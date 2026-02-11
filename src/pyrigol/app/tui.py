@@ -224,6 +224,34 @@ def build_serial_settings(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _print_lines(lines: list[str]) -> None:
+    for line in lines:
+        print(line)
+
+
+MENU_EDIT_HELP = [
+    "+--------------------------------------------------------+",
+    "|                                                        |",
+    "|      Enter: apply change                               |",
+    "|        0-9: type a voltage (e.g. 0.250) enter to apply |",
+    "|        Esc: cancel voltage entry                       |",
+    "|                                                        |",
+    "|                                                        |",
+    "+--------------------------------------------------------+",
+]
+
+MENU_NAV_HELP = [
+    "+--------------------------------------------------------+",
+    "|                                                        |",
+    "|   Spacebar: toggle item                                |",
+    "|    Up/Down: switch menu item                           |",
+    "|      Enter: confirm Voltage Step Size update           |",
+    "|        Esc: exit the menu                              |",
+    "|                                                        |",
+    "+--------------------------------------------------------+",
+]
+
+
 def draw_screen(
     boxes: list[list[str]],
     menu_lines: list[str],
@@ -233,28 +261,25 @@ def draw_screen(
 ) -> None:
     os.system("cls")
     if menu_open:
-        for line in menu_lines:
-            print(line)
+        _print_lines(menu_lines)
         print("")
-        if menu_editing:
-            print("Type a value. Enter to apply.")
-        else:
-            print("Up/Down: move")
-            print("Enter: edit")
-            print("Esc: back")
+        _print_lines(MENU_EDIT_HELP if menu_editing else MENU_NAV_HELP)
         return
 
     for row in zip(*boxes, strict=True):
         print("  ".join(row))
     print("")
-    print("+--------------------------------------------------------+")
-    print("| Left/Right: switch channel                             |")
-    print("|   Spacebar: toggle selected channel ON/OFF             |")
-    print(f"|    Up/Down: nudge by {step_size:.3f} V                           |")
-    print("|        0-9: type a voltage (e.g. 5.00) enter to apply  |")
-    print("|        Tab: menu                                       |")
-    print("|        Esc: exit                                       |")
-    print("+--------------------------------------------------------+")
+    main_help = [
+        "+--------------------------------------------------------+",
+        "| Left/Right: switch channel                             |",
+        "|   Spacebar: toggle selected channel ON/OFF             |",
+        f"|    Up/Down: nudge by {step_size:.3f} V                           |",
+        "|        0-9: type a voltage (e.g. 5.000) enter to apply |",
+        "|        Tab: menu                                       |",
+        "|        Esc: exit                                       |",
+        "+--------------------------------------------------------+",
+    ]
+    _print_lines(main_help)
 
 
 def clamp_voltage(voltage: float, min_v: float, max_v: float) -> float:
