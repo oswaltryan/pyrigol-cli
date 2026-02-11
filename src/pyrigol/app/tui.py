@@ -234,7 +234,7 @@ MENU_EDIT_HELP = [
     "|                                                        |",
     "|      Enter: apply change                               |",
     "|        0-9: type a voltage (e.g. 0.250) enter to apply |",
-    "|        Esc: cancel voltage entry                       |",
+    "|        Esc: exit setting                               |",
     "|                                                        |",
     "|                                                        |",
     "+--------------------------------------------------------+",
@@ -245,8 +245,8 @@ MENU_NAV_HELP = [
     "|                                                        |",
     "|   Spacebar: toggle item                                |",
     "|    Up/Down: switch menu item                           |",
-    "|      Enter: confirm Voltage Step Size update           |",
-    "|        Esc: exit the menu                              |",
+    "|        Esc: exit menu                                  |",
+    "|                                                        |",
     "|                                                        |",
     "+--------------------------------------------------------+",
 ]
@@ -276,7 +276,7 @@ def draw_screen(
         f"|    Up/Down: nudge by {step_size:.3f} V                           |",
         "|        0-9: type a voltage (e.g. 5.000) enter to apply |",
         "|        Tab: menu                                       |",
-        "|        Esc: exit                                       |",
+        "|        Esc: exit (confirm)                             |",
         "+--------------------------------------------------------+",
     ]
     _print_lines(main_help)
