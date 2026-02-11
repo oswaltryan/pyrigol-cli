@@ -37,7 +37,7 @@ DOT_CHAR = "."
 DOT_SPLIT_MAX = 1
 KEY_BACKSPACE = (b"\x08", b"\x7f")
 KEY_ESCAPE = b"\x1b"
-KEY_MENU = (b"m", b"M")
+KEY_MENU = (b"\t",)
 ESC_REVERSE = "\x1b[7m"
 ESC_RESET = "\x1b[0m"
 DIGIT_KEYS = tuple(str(d).encode() for d in range(10))
@@ -237,21 +237,24 @@ def draw_screen(
             print(line)
         print("")
         if menu_editing:
-            print("Type value")
-            print("Enter confirms")
+            print("Type a value. Enter to apply.")
         else:
-            print("Up/Down to move")
-            print("Enter to edit")
-            print("Esc to exit")
+            print("Up/Down: move")
+            print("Enter: edit")
+            print("Esc: back")
         return
 
     for row in zip(*boxes, strict=True):
         print("  ".join(row))
     print("")
-    print(f"Use Up/Down arrows to adjust by {step_size:.2f} V. Space toggles.")
-    print("Type 0-9 and optional '.' to set voltage. Enter confirms.")
-    print("Press Left/Right arrows to select a channel. Press M for menu.")
-    print("Press Esc to exit.")
+    print("+--------------------------------------------------------+")
+    print("| Left/Right: switch channel                             |")
+    print("|   Spacebar: toggle selected channel ON/OFF             |")
+    print(f"|    Up/Down: nudge by {step_size:.3f} V                           |")
+    print("|        0-9: type a voltage (e.g. 5.00) enter to apply  |")
+    print("|        Tab: menu                                       |")
+    print("|        Esc: exit                                       |")
+    print("+--------------------------------------------------------+")
 
 
 def clamp_voltage(voltage: float, min_v: float, max_v: float) -> float:
