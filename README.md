@@ -71,8 +71,15 @@ Controls:
   the decimal).
 - Enter: confirm typed voltage.
 - Space: toggle output (selected channel).
-- M: open the menu (step size + auto-apply).
+- Tab: open the menu (step size + auto-apply).
 - Esc: exit (with confirmation prompt).
+
+Menu controls:
+
+- Up/Down arrows: switch menu item.
+- Space: toggle the selected item (including Auto-Apply).
+- Enter: edit/apply Voltage Step Size.
+- Esc: exit setting (while editing) or exit menu.
 
 Channel limits:
 
