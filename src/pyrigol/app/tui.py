@@ -584,17 +584,6 @@ def apply_menu_action(state: UiState) -> UiState:
             True,
             "",
         )
-    if item.key == "auto_apply":
-        return UiState(
-            state.selected_channel,
-            state.channels,
-            state.menu_open,
-            index,
-            not state.auto_apply,
-            state.voltage_step,
-            state.menu_editing,
-            state.menu_input_buffer,
-        )
     return state
 
 
@@ -631,26 +620,35 @@ def handle_menu_editing_key(key: bytes, state: UiState, ctx: ChannelContext) -> 
     return state
 
 
-def handle_menu_key(
-    key: bytes,
-    state: UiState,
-    ctx: ChannelContext,
-    msvcrt: Any,
-) -> UiState:
-    if key == KEY_ESCAPE:
+def handle_menu_escape(state: UiState) -> UiState:
+    if state.menu_editing:
         return update_state(
             state,
-            menu_open=False,
             menu_editing=False,
             menu_input_buffer="",
         )
-    if state.menu_editing:
-        return handle_menu_editing_key(key, state, ctx)
-    if key == KEY_CONFIRM:
-        return apply_menu_action(state)
-    if key != KEY_EXTENDED:
-        return state
+    return update_state(
+        state,
+        menu_open=False,
+        menu_editing=False,
+        menu_input_buffer="",
+    )
 
+
+def handle_menu_toggle(state: UiState) -> UiState:
+    settings = build_menu_settings(state)
+    if not settings:
+        return state
+    index = min(state.menu_index, len(settings) - 1)
+    item = settings[index]
+    if item.key == "voltage_step":
+        return apply_menu_action(state)
+    if item.key == "auto_apply":
+        return update_state(state, auto_apply=not state.auto_apply)
+    return state
+
+
+def handle_menu_navigation(state: UiState, msvcrt: Any) -> UiState:
     next_key = msvcrt.getch()
     delta = 0
     if next_key == KEY_UP:
@@ -659,6 +657,23 @@ def handle_menu_key(
         delta = 1
     if delta:
         return update_menu_index(state, delta)
+    return state
+
+
+def handle_menu_key(
+    key: bytes,
+    state: UiState,
+    ctx: ChannelContext,
+    msvcrt: Any,
+) -> UiState:
+    if key == KEY_ESCAPE:
+        return handle_menu_escape(state)
+    if state.menu_editing:
+        return handle_menu_editing_key(key, state, ctx)
+    if key == KEY_TOGGLE:
+        return handle_menu_toggle(state)
+    if key == KEY_EXTENDED:
+        return handle_menu_navigation(state, msvcrt)
     return state
 
 
@@ -860,6 +875,9 @@ def confirm_exit(msvcrt: Any) -> bool:
             return True
         if key in (b"n", b"N"):
             print("N")
+            return False
+        if key == KEY_ESCAPE:
+            print("Esc")
             return False
         if key in (b"\r", b"\n"):
             continue
